@@ -1,0 +1,54 @@
+#VRML_SIM R2025a utf8
+
+# Simple kinematic deer for the Catalina Island simulation.
+# The source OBJ has no armature, so animation is applied to the whole body.
+
+PROTO Deer [
+  field SFVec3f translation 0 0 0
+  field SFRotation rotation 0 0 1 0
+  field SFString name "deer"
+  field SFString controller "deer_ai"
+  field SFString customData "1"
+] {
+  Robot {
+    translation IS translation
+    rotation IS rotation
+    name IS name
+    controller IS controller
+    customData IS customData
+    supervisor TRUE
+    children [
+      Transform {
+        # Convert the source model from Y-up to Webots' Z-up coordinates,
+        # scale it to about 2.15 meters tall, and put its feet at z = 0.
+        translation -0.2515 0.0635 0.0108
+        rotation 1 0 0 1.57079632679
+        scale 0.0003 0.0003 0.0003
+        children [
+          Shape {
+            appearance PBRAppearance {
+              baseColor 0.38 0.21 0.09
+              roughness 0.9
+              metalness 0
+            }
+            geometry Mesh {
+              url [
+                "meshes/deer/deer.obj"
+              ]
+            }
+          }
+        ]
+      }
+    ]
+    # A lightweight approximation used for selection and proximity checks.
+    # Motion is intentionally kinematic, so no Physics node is required.
+    boundingObject Pose {
+      translation 0 0 0.82
+      children [
+        Box {
+          size 1.75 0.62 1.35
+        }
+      ]
+    }
+  }
+}
