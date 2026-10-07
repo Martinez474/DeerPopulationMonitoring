@@ -74,7 +74,7 @@ def quaternion_to_axis_angle(quaternion):
     angle = 2.0 * math.acos(w)
     sine = math.sqrt(max(0.0, 1.0 - w * w))
 
-    # use a harmless default axis when the rotation is almost zero
+    # use a default axis when the rotation is almost zero
     if sine < 1e-7:
         return [0.0, 0.0, 1.0, 0.0]
     return [x / sine, y / sine, z / sine, angle]
@@ -424,6 +424,4 @@ class DeerController:
             self.update_behavior(now)
             self.update_pose(now)
 
-
-# create the controller and keep it running until the simulation stops
 DeerController().run()
