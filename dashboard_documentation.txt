@@ -1,0 +1,30 @@
+﻿Dashboard: https://io.adafruit.com/Cialateeeeeer/dashboards/deer-detection?kiosk=true
+Instructions
+1. Create virtual environment (Windows)
+   1. py -m venv .venv
+   2. .venv\Scripts\Activate.ps1
+2. Install Adafruit IO
+   1. python -m pip install adafruit-io
+3. Run the program
+   1. python mock_dashboard.py
+Progress Annotations
+1. Created the deer-detection dashboard on Adafruit IO.
+2. Connected the Python program to Adafruit IO.
+3. Created feeds for:
+   1. Deer count
+   2. Deer threshold
+   3. Alert status
+   4. Average confidence
+4. Added dashboard blocks to display:
+   1. Current deer count
+   2. Deer threshold
+   3. Alert status
+   4. Deer-count history
+5. Tested the dashboard by changing the mock deer count from 10 to 15.
+6. Confirmed that the new deer-count value was successfully sent to the dashboard.
+7. Added logic that displays Normal when the count is below the threshold.
+8. Added logic that displays Warning: Excessive deer count when the count reaches or exceeds the threshold.
+9. Corrected errors involving the username, feed keys, API key, and Python indentation.
+10. Created an Adafruit IO Action that sends an SMS when the deer count exceeds the threshold.
+11. Verified a phone number and successfully tested the SMS notification.
+12. Created a kiosk link that allows the dashboard to be viewed without giving viewers the Adafruit IO API key.xa
