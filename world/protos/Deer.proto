@@ -1,7 +1,7 @@
 #VRML_SIM R2025a utf8
 
 # Simple kinematic deer for the Catalina Island simulation.
-# The source OBJ has no armature, so animation is applied to the whole body.
+# The static source OBJ can be replaced with an animated model later.
 
 PROTO Deer [
   field SFVec3f translation 0 0 0
@@ -14,9 +14,14 @@ PROTO Deer [
     translation IS translation
     rotation IS rotation
     name IS name
+    model "deer"
     controller IS controller
     customData IS customData
     supervisor TRUE
+    # Makes the rendered deer silhouette available to recognition-enabled cameras.
+    recognitionColors [
+      0.38 0.21 0.09
+    ]
     children [
       Transform {
         # Convert the source model from Y-up to Webots' Z-up coordinates,
