@@ -5,7 +5,6 @@ EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/project
 EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/floors/protos/RectangleArena.proto"
 EXTERNPROTO "../protos/CatalinaTerrain.proto"
 EXTERNPROTO "../protos/Deer.proto"
-
 EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/robots/dji/mavic/protos/Mavic2Pro.proto"
 EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/factory/manhole/protos/SquareManhole.proto"
 
@@ -49,7 +48,7 @@ Deer {
   customData "29"
 }
 Deer {
-  translation 23898 16997.2 203.310
+  translation 23898 16997.2 203.31
   rotation 0 0 1 2.35
   name "Catalina deer 4"
   customData "40"
@@ -90,8 +89,7 @@ Deer {
   name "Catalina deer 10"
   customData "106"
 }
-
-Group {
+DEF Waypoints(Drone) Group {
   children [
     Solid {
       translation 34142.3 14365.7 352
@@ -108,12 +106,10 @@ Group {
     }
   ]
 }
-
 Mavic2Pro {
   translation 34988.9 15793.9 18.2
   controller "maveric_patrol"
 }
-
 DEF LaunchPad SquareManhole {
   translation 34988.9 15793.9 18
 }
