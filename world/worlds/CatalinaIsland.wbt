@@ -15,7 +15,7 @@ WorldInfo {
     angular 0.5
   }
 }
-Viewpoint {
+DEF SURVEY_VIEWPOINT Viewpoint {
   orientation 0 0 1 3.6915926535897934
   position 23881.168150136094 17010.17603532597 204.2910448450615
   follow "Catalina deer"
@@ -108,7 +108,27 @@ DEF Waypoints(Drone) Group {
 }
 Mavic2Pro {
   translation 34988.9 15793.9 18.2
-  controller "maveric_patrol"
+  name "Wildlife survey drone"
+  controller "drone_startup"
+  supervisor TRUE
+  cameraSlot [
+    Camera {
+      name "camera"
+      fieldOfView 1.0472
+      width 960
+      height 540
+      near 0.2
+      far 500
+      antiAliasing TRUE
+      recognition Recognition {
+        maxRange 250
+        maxObjects -1
+        occlusion 1
+        frameColor 0.2 1 0.2
+        frameThickness 5
+      }
+    }
+  ]
 }
 DEF LaunchPad SquareManhole {
   translation 34988.9 15793.9 18

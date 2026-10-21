@@ -1,6 +1,4 @@
-"""
-Simple Deer AI
-"""
+"""Terrain-aware Catalina deer controller with extensible behavior states."""
 
 import math
 import random
@@ -8,8 +6,10 @@ from pathlib import Path
 
 from controller import Supervisor
 
+from deer_states import DeerState, IdleState
 
-# these values describe the elevation grid used to build the island
+
+# elevation grid used to build the island
 GRID_WIDTH = 512
 GRID_HEIGHT = 512
 X_SPACING = 90.783197
@@ -36,12 +36,6 @@ def wrap_angle(angle):
     while angle < -math.pi:
         angle += 2.0 * math.pi
     return angle
-
-
-def smoothstep(value):
-    # create a smooth zero-to-one blend with gentle starts and stops
-    value = clamp(value, 0.0, 1.0)
-    return value * value * (3.0 - 2.0 * value)
 
 
 def multiply_quaternions(left, right):
@@ -114,14 +108,6 @@ def load_terrain_heights():
 
 
 class DeerController:
-    # each state lasts for a random number of seconds inside these ranges
-    DURATIONS = {
-        "idle": (4.0, 9.0),
-        "graze": (6.0, 14.0),
-        "alert": (2.5, 5.0),
-        "walk": (8.0, 18.0),
-    }
-
     def __init__(self):
         # connect this python controller to its deer robot in webots
         self.robot = Supervisor()
@@ -163,10 +149,10 @@ class DeerController:
         self.next_steer_time = 0.0
 
         # start in the idle state and choose a random idle duration
-        self.state = "idle"
+        self.state: DeerState = IdleState()
         self.state_started = self.robot.getTime()
         self.state_ends = self.state_started
-        self.enter_state("idle")
+        self.enter_state(IdleState())
         print(f"{self.name}: simple deer AI active")
 
     def terrain_height(self, x, y):
@@ -227,38 +213,14 @@ class DeerController:
         sideways_rise = abs(samples[3] - samples[4])
         return forward_rise <= max_rise and sideways_rise <= max_rise
 
-    def enter_state(self, state):
+    def enter_state(self, state: DeerState):
         # record the new behavior and choose when it should finish
         now = self.robot.getTime()
         self.state = state
         self.state_started = now
-        low, high = self.DURATIONS[state]
+        low, high = state.duration_range
         self.state_ends = now + self.random.uniform(low, high)
-
-        # a walking state needs a safe direction before movement begins
-        if state == "walk":
-            self.choose_walk_heading(now)
-
-    def choose_next_state(self):
-        choice = self.random.random()
-
-        # walking is normally followed by resting or grazing
-        if self.state == "walk":
-            return "graze" if choice < 0.42 else "idle"
-
-        # grazing usually leads back into a walk
-        if self.state == "graze":
-            return "walk" if choice < 0.58 else "idle"
-
-        # an alert deer usually decides to move away afterward
-        if self.state == "alert":
-            return "walk" if choice < 0.7 else "idle"
-
-        if choice < 0.43:
-            return "walk"
-        if choice < 0.82:
-            return "graze"
-        return "alert"
+        state.enter(self, now)
 
     def choose_walk_heading(self, now):
         # measure how far the deer has wandered from its spawn point
@@ -296,14 +258,12 @@ class DeerController:
     def update_behavior(self, now):
         # change behavior when the current state's timer expires
         if now >= self.state_ends:
-            self.enter_state(self.choose_next_state())
+            self.enter_state(self.state.choose_next(self))
 
-        # walking deer occasionally adjust their direction
-        if self.state == "walk" and now >= self.next_steer_time:
-            self.choose_walk_heading(now)
+        self.state.update(self, now)
 
         # smoothly accelerate while walking and smoothly stop in other states
-        target_speed = 0.62 if self.state == "walk" else 0.0
+        target_speed = self.state.target_speed
         acceleration = 0.38 if target_speed > self.speed else 0.6
         speed_change = clamp(
             target_speed - self.speed,
@@ -311,13 +271,6 @@ class DeerController:
             acceleration * self.dt,
         )
         self.speed += speed_change
-
-        # rotate toward the desired heading at a limited, natural turn speed
-        if self.state == "walk":
-            heading_error = wrap_angle(self.desired_heading - self.heading)
-            self.heading = wrap_angle(
-                self.heading + clamp(heading_error, -0.32 * self.dt, 0.32 * self.dt)
-            )
 
         # predict the next horizontal position before committing to the move
         next_x = self.x + math.cos(self.heading) * self.speed * self.dt
@@ -331,52 +284,7 @@ class DeerController:
             self.x = next_x
             self.y = next_y
 
-    def body_gesture(self, now):
-        # measure progress through the current behavior state
-        elapsed = now - self.state_started
-        remaining = self.state_ends - now
-
-        # every return value contains height, pitch, roll, and extra yaw
-        if self.state == "walk":
-            # walking adds a repeating vertical bob and side-to-side sway
-            stride = 2.0 * math.pi * 1.55 * elapsed
-            return (
-                0.018 + 0.022 * abs(math.sin(stride)),
-                0.018 * math.sin(stride),
-                0.025 * math.sin(stride + math.pi / 2.0),
-                0.0,
-            )
-        if self.state == "graze":
-            # grazing slowly lowers and pitches the body, then raises it again
-            blend = smoothstep(min(elapsed / 1.4, remaining / 1.4))
-            return (
-                -0.035 * blend + 0.006 * math.sin(now * 1.2),
-                0.12 * blend,
-                0.012 * math.sin(now * 0.7),
-                0.0,
-            )
-        if self.state == "alert":
-            # alert behavior raises the body and scans left and right
-            blend = smoothstep(min(elapsed / 0.6, remaining / 0.8))
-            return (
-                0.018 * blend,
-                -0.035 * blend,
-                0.008 * math.sin(now * 1.8),
-                0.075 * math.sin(elapsed * 1.1) * blend,
-            )
-
-        # idle behavior uses tiny breathing and balance motions
-        return (
-            0.006 * math.sin(now * 1.05),
-            0.008 * math.sin(now * 0.55),
-            0.012 * math.sin(now * 0.42),
-            0.0,
-        )
-
-    def update_pose(self, now):
-        # get the small animation offsets for the current behavior
-        body_height, gesture_pitch, roll, yaw_offset = self.body_gesture(now)
-
+    def update_pose(self):
         # build forward and left sample directions from the current heading
         sample_distance = 1.0
         forward_x = math.cos(self.heading) * sample_distance
@@ -405,16 +313,12 @@ class DeerController:
         # place the deer directly above the current terrain surface
         ground_height = self.terrain_height(self.x, self.y)
         self.translation.setSFVec3f(
-            [self.x, self.y, ground_height + GROUND_CLEARANCE + body_height]
+            [self.x, self.y, ground_height + GROUND_CLEARANCE]
         )
 
-        # combine travel direction, terrain tilt, and behavior animation
+        # align the static model with its travel direction and the terrain
         self.rotation.setSFRotation(
-            body_rotation(
-                self.heading + yaw_offset,
-                terrain_pitch + gesture_pitch,
-                terrain_roll + roll,
-            )
+            body_rotation(self.heading, terrain_pitch, terrain_roll)
         )
 
     def run(self):
@@ -422,6 +326,6 @@ class DeerController:
         while self.robot.step(self.time_step) != -1:
             now = self.robot.getTime()
             self.update_behavior(now)
-            self.update_pose(now)
+            self.update_pose()
 
 DeerController().run()
