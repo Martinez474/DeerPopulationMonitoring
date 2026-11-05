@@ -3,7 +3,7 @@
 from pathlib import Path
 import sys
 
-DRONE_MODE = "patrol"  # "patrol" or "drone_tracker"
+DRONE_MODE = "drone_tracker"  # "patrol" or "drone_tracker"
 
 
 def main():

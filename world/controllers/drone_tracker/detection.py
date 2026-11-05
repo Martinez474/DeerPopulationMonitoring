@@ -1,8 +1,7 @@
-"""Deer detection backends for the survey drone.
+"""Shared detection records and the simulator-recognition backend.
 
-The visual backend uses Webots' camera-recognition output.  Keeping detection
-behind this small interface lets a thermal backend replace it later without
-changing flight control or the HUD.
+The YOLO backend in yolo_detection.py consumes pixels instead of scene labels.
+IDs and 3D camera coordinates are unavailable for YOLO predictions.
 """
 
 from dataclasses import asdict, dataclass
@@ -24,15 +23,17 @@ def is_deer_model(model: str) -> bool:
 class DeerDetection:
     """The useful portion of one recognition result."""
 
-    object_id: int
+    object_id: int | None
     model: str
     image_x: int
     image_y: int
     image_width: int
     image_height: int
-    camera_x: float
-    camera_y: float
-    camera_z: float
+    camera_x: float | None
+    camera_y: float | None
+    camera_z: float | None
+
+    confidence: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

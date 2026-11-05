@@ -9,6 +9,9 @@ from detection import VisualShapeDeerDetector
 from view_control import DRONE_VIEW, DroneViewController
 
 
+DETECTION_BACKEND = "yolo"  # "yolo" or "visual_shape"
+YOLO_INTERVAL_SECONDS = 0.2
+
 HUD_FONT = "Arial Black"
 HUD_TEXT = 0xFFFFFF
 HUD_ACCENT = 0x9EEBFF
@@ -117,13 +120,19 @@ class WildlifeSurveyDrone(Supervisor):
         self.camera = self.getDevice("camera")
         camera_period = self.time_step * self.camera_update_steps
         self.camera.enable(camera_period)
-        self.camera.recognitionEnable(camera_period)
-
-        # keep deer detection separate from flight
-        self.detector = VisualShapeDeerDetector()
+        if DETECTION_BACKEND == "yolo":
+            from yolo_detection import YoloDeerDetector
+            self.detector = YoloDeerDetector()
+        elif DETECTION_BACKEND == "visual_shape":
+            self.camera.recognitionEnable(camera_period)
+            self.detector = VisualShapeDeerDetector()
+        else:
+            raise ValueError(f"Unknown detection backend: {DETECTION_BACKEND}")
         self.detections = []
         self.detection_interval = camera_period / 1000.0
-        self.next_detection_time = 0.0
+        if DETECTION_BACKEND == "yolo":
+            self.detection_interval = max(self.detection_interval, YOLO_INTERVAL_SECONDS)
+        self.next_detection_time = camera_period / 1000.0
 
         # manage chase and onboard views
         self.view = DroneViewController(self, self.camera, "SURVEY_VIEWPOINT")
@@ -311,7 +320,7 @@ class WildlifeSurveyDrone(Supervisor):
         self.set_hud_text(0, view_text, 0.025, title_y, 0.045, HUD_ACCENT)
         self.set_hud_text(
             1,
-            f"Deer visible: {deer_count}",
+            f"Deer visible ({self.detector.mode}): {deer_count}",
             0.025,
             count_y,
             0.078,
