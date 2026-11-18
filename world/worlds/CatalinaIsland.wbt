@@ -2,13 +2,11 @@
 
 EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/backgrounds/protos/TexturedBackground.proto"
 EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/backgrounds/protos/TexturedBackgroundLight.proto"
-EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/floors/protos/RectangleArena.proto"
-EXTERNPROTO "../protos/CatalinaTerrain.proto"
 EXTERNPROTO "../protos/Deer.proto"
 EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/robots/dji/mavic/protos/Mavic2Pro.proto"
-EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/factory/manhole/protos/SquareManhole.proto"
-
 EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/trees/protos/Forest.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/factory/manhole/protos/SquareManhole.proto"
+EXTERNPROTO "../protos/CatalinaTerrain.proto"
 
 WorldInfo {
   basicTimeStep 8
@@ -18,78 +16,193 @@ WorldInfo {
   }
 }
 DEF SURVEY_VIEWPOINT Viewpoint {
-  orientation 0 0 1 3.6915926535897934
-  position 23881.168150136094 17010.17603532597 204.2910448450615
-  follow "Catalina deer"
-  followSmoothness 0.4
+  fieldOfView 1.0472
+  position 23868 17007 220
+  followType "None"
+  followSmoothness 0
 }
 TexturedBackground {
 }
 TexturedBackgroundLight {
+  luminosity 0.15
+  castShadows FALSE
 }
-RectangleArena {
+DEF SURVEY_SUN DirectionalLight {
+  color 1 0.7526179460290614 0.5547123028523107
+  direction -0.9950344666526093 0.010420357477822008 -0.0989839700324833
+  intensity 0.015707676174368704
 }
-CatalinaTerrain {
-}
-Deer {
-  translation 23876 17007.2 203.127
-  rotation 0 0 1 0.55
-  name "Catalina deer"
-  customData "7"
-}
-Deer {
-  translation 23888 17016.2 203.126
-  rotation 0 0 1 1.18
-  name "Catalina deer 2"
-  customData "18"
-}
-Deer {
-  translation 23861 17019.2 203.306
-  rotation 0 0 1 -0.42
-  name "Catalina deer 3"
-  customData "29"
-}
-Deer {
-  translation 23898 16997.2 203.31
-  rotation 0 0 1 2.35
-  name "Catalina deer 4"
-  customData "40"
-}
-Deer {
-  translation 23851 16999.2 203.896
-  rotation 0 0 1 -1.64
-  name "Catalina deer 5"
-  customData "51"
-}
-Deer {
-  translation 23911 17022.2 203.226
-  rotation 0 0 1 0.12
-  name "Catalina deer 6"
-  customData "62"
-}
-Deer {
-  translation 23838 17025.2 203.501
-  rotation 0 0 1 2.92
-  name "Catalina deer 7"
-  customData "73"
-}
-Deer {
-  translation 23918 16985.2 203.487
-  rotation 0 0 1 -2.48
-  name "Catalina deer 8"
-  customData "84"
-}
-Deer {
-  translation 23831 16987.2 204.927
-  rotation 0 0 1 1.82
-  name "Catalina deer 9"
-  customData "95"
-}
-Deer {
-  translation 23880 17042.2 203.329
-  rotation 0 0 1 -0.95
-  name "Catalina deer 10"
-  customData "106"
+DEF Environment Group {
+  children [
+    CatalinaTerrain {
+    }
+    DEF LaunchPad SquareManhole {
+      translation 34988.9 15793.9 18
+    }
+    DEF Shrubs Group {
+      children [
+        DEF THERMAL_SHRUB_1 Solid {
+          translation 23888 17016.2 203.126
+          children [
+            Transform {
+              translation 0 0 1.8
+              scale 2.6 2.6 2.2
+              children [
+                Shape {
+                  appearance PBRAppearance {
+                    baseColor 0.23 0.34 0.12
+                    roughness 1
+                  }
+                  geometry Sphere {
+                  }
+                }
+              ]
+            }
+          ]
+          name "sparse survey shrub"
+          boundingObject Pose {
+            translation 0 0 1.8
+            children [
+              Sphere {
+                radius 2.6
+              }
+            ]
+          }
+        }
+        DEF THERMAL_SHRUB_2 Solid {
+          translation 23898 16997.2 203.31
+          children [
+            Transform {
+              translation 0 0 1.8
+              scale 2.6 2.6 2.2
+              children [
+                Shape {
+                  appearance PBRAppearance {
+                    baseColor 0.16 0.27 0.1
+                    roughness 1
+                  }
+                  geometry Sphere {
+                  }
+                }
+              ]
+            }
+          ]
+          name "dense survey shrub"
+          boundingObject Pose {
+            translation 0 0 1.8
+            children [
+              Sphere {
+                radius 2.6
+              }
+            ]
+          }
+        }
+        DEF THERMAL_SHRUB_3 Solid {
+          translation 23838 17025.2 203.501
+          children [
+            Transform {
+              translation 0 0 1.8
+              scale 2.6 2.6 2.2
+              children [
+                Shape {
+                  appearance PBRAppearance {
+                    baseColor 0.21 0.31 0.13
+                    roughness 1
+                  }
+                  geometry Sphere {
+                  }
+                }
+              ]
+            }
+          ]
+          name "medium survey shrub"
+          boundingObject Pose {
+            translation 0 0 1.8
+            children [
+              Sphere {
+                radius 2.6
+              }
+            ]
+          }
+        }
+      ]
+    }
+    DEF Deer Group {
+      children [
+        DEF THERMAL_DEER_1 Deer {
+          translation 23876 17007.2 203.127
+          rotation 0 0 1 0.55
+          name "Catalina deer"
+          customData "7"
+        }
+        DEF THERMAL_DEER_2 Deer {
+          translation 23888 17016.2 203.126
+          rotation 0 0 1 1.18
+          name "Catalina deer 2"
+          customData "18"
+        }
+        DEF THERMAL_DEER_3 Deer {
+          translation 23861 17019.2 203.306
+          rotation 0 0 1 -0.42
+          name "Catalina deer 3"
+          customData "29"
+        }
+        DEF THERMAL_DEER_4 Deer {
+          translation 23898 16997.2 203.31
+          rotation 0 0 1 2.35
+          name "Catalina deer 4"
+          customData "40"
+        }
+        DEF THERMAL_DEER_5 Deer {
+          translation 23851 16999.2 203.896
+          rotation 0 0 1 -1.64
+          name "Catalina deer 5"
+          customData "51"
+        }
+        DEF THERMAL_DEER_6 Deer {
+          translation 23911 17022.2 203.226
+          rotation 0 0 1 0.12
+          name "Catalina deer 6"
+          customData "62"
+        }
+        DEF THERMAL_DEER_7 Deer {
+          translation 23838 17025.2 203.501
+          rotation 0 0 1 2.92
+          name "Catalina deer 7"
+          customData "73"
+        }
+        DEF THERMAL_DEER_8 Deer {
+          translation 23918 16985.2 203.487
+          rotation 0 0 1 -2.48
+          name "Catalina deer 8"
+          customData "84"
+        }
+        DEF THERMAL_DEER_9 Deer {
+          translation 23831 16987.2 204.927
+          rotation 0 0 1 1.82
+          name "Catalina deer 9"
+          customData "95"
+        }
+        DEF THERMAL_DEER_10 Deer {
+          translation 23880 17042.2 203.329
+          rotation 0 0 1 -0.95
+          name "Catalina deer 10"
+          customData "106"
+        }
+      ]
+    }
+    DEF Forest Group {
+      children [
+        Forest {
+          treesFiles [
+            "forest/catalina.forest"
+          ]
+          randomSeed 42
+          groundTexture []
+        }
+      ]
+    }
+  ]
 }
 DEF Waypoints(Drone) Group {
   children [
@@ -115,32 +228,44 @@ Mavic2Pro {
   supervisor TRUE
   cameraSlot [
     Camera {
-      name "camera"
       fieldOfView 1.0472
-      width 960
-      height 540
+      width 640
+      height 360
       near 0.2
       far 500
-      antiAliasing TRUE
       recognition Recognition {
         maxRange 250
-        maxObjects -1
-        occlusion 1
         frameColor 0.2 1 0.2
         frameThickness 5
+        segmentation TRUE
       }
     }
+    RangeFinder {
+      name "thermal depth"
+      fieldOfView 1.0472
+      width 256
+      height 144
+      near 0.2
+      minRange 0.2
+      maxRange 500
+    }
+    Display {
+      translation 0 0 1000
+      children [
+        Shape {
+          appearance Appearance {
+            texture ImageTexture {
+              filtering 0
+            }
+          }
+          geometry Box {
+            size 0.002 0.7 0.394
+          }
+        }
+      ]
+      name "thermal display"
+      width 256
+      height 144
+    }
   ]
-}
-DEF LaunchPad SquareManhole {
-  translation 34988.9 15793.9 18
-}
-
-Forest {
-  # Existing island-wide positions sampled at terrain height.
-  treesFiles [
-    "forest/catalina.forest"
-  ]
-  randomSeed 42
-  groundTexture []
 }

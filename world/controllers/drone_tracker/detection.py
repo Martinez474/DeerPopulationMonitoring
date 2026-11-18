@@ -10,6 +10,7 @@ from typing import Any
 
 
 VISUAL_SHAPE_MODE = "visual_shape"
+THERMAL_MODE = "simulated_thermal"
 
 
 def is_deer_model(model: str) -> bool:
@@ -34,6 +35,8 @@ class DeerDetection:
     camera_z: float | None
 
     confidence: float | None = None
+    thermal_contrast_c: float | None = None
+    canopy_cover: float = 0.0
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

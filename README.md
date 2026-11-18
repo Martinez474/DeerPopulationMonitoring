@@ -1,38 +1,105 @@
-## Select the drone mode
+# Deer Population Monitoring
 
-Edit `world/controllers/drone_startup/drone_startup.py`:
+Survey deer on Catalina Island with a manually flown drone in Webots. The
+prototype creates a simulated thermal image and marks possible animals.
 
-```python
-DRONE_MODE = "patrol"  # "patrol" or "drone_tracker"
-```
+> **Status:** Temperatures are illustrative. Thermal results are heat candidates;
+> RGB YOLO detection is integrated; thermal-trained YOLO and animal tracking remain future work.
 
-Save and reload the world (reset the simulation) after changing modes.
-There is one drone. `patrol` starts on the launch pad and follows the existing
-waypoints. `drone_tracker` places that drone near the deer for manual flight
-and camera recognition. Detection is currently active only in tracker mode.
-The launch pad and waypoint markers remain in both modes.
+## Get started
 
-The controls below apply to `drone_tracker` mode.
+Use **Webots with Python controllers**. NumPy is optional and accelerates
+rendering when installed in the Python environment Webots uses.
 
-## Drone Controls
+1. Open [CatalinaIsland.wbt](world/worlds/CatalinaIsland.wbt).
+2. Click **Reload World**, then **Play** if paused.
+3. Thermal starts automatically. Look for **Drone thermal view**.
+4. Click the main 3D view before using the keyboard.
 
-| Input | Action |
+## Controls
+
+| Key | Action |
 | --- | --- |
 | Up / Down | Fly forward / backward |
 | Left / Right | Turn left / right |
-| Shift + Left / Right | Strafe left / right |
+| Shift + Left / Right | Move sideways |
 | Shift + Up / Down | Raise / lower the drone |
-| I / K | Tilt the camera up / down |
-| V | Toggle between chase view and the drone camera |
+| **T** | Switch thermal / RGB |
+| **O** | Advance the clock six hours |
+
+## How it works
+
+**See → assign temperature → find warm regions → show candidates**
+
+1. **See:** Depth identifies the first visible surface. Webots segmentation
+   marks visible deer pixels; shrub geometry identifies canopy surfaces.
+2. **Assign temperature:** Formulas simulate ground, shrub, fur, and sky
+   temperatures, including daytime warming and approximate infrared effects.
+3. **Find warm regions:** After a slight blur, the detector groups unusually hot
+   pixels and filters by size and shape. It uses temperatures and depth, without
+   deer labels or known positions.
+4. **Show candidates:** Orange `+` marks and the count describe possible animals
+   in the current frame. RGB mode uses YOLO by default, with Webots recognition available as a fallback.
+
+The purple-to-yellow color scale adjusts with the background temperature.
+Check its range on the HUD when comparing frames. A simulated day starts at
+**06:00** and lasts **ten simulation minutes**.
+
+## Current limits
+
+- Warm ground can cause false alarms. Hidden or distant deer can be missed.
+- Counts are per frame; the system does not yet identify unique animals.
+- The visible sun shares the thermal clock. Heating follows preset rules,
+  without stored heat or gradual cooling. Sky artwork stays fixed; shadows are off.
+- Known deer positions only score a console diagnostic and never alter detections.
+
+## Performance
+
+Thermal depth and display use **256 × 144 pixels**. RGB uses **640 × 360**, with
+antialiasing off. Sensors update every **256 ms** with this world's 8 ms step.
+NumPy accelerates thermal rendering; a Python fallback works without it.
+
+## Where to look
+
+| File | Purpose |
+| --- | --- |
+| [drone_tracker.py](world/controllers/drone_tracker/drone_tracker.py) | Flight, sensors, clock, and HUD |
+| [thermal_scene.py](world/controllers/drone_tracker/thermal_scene.py) | Temperature image |
+| [thermal_image_detection.py](world/controllers/drone_tracker/thermal_image_detection.py) | Hot-region detection |
+| [thermal_view.py](world/controllers/drone_tracker/thermal_view.py) | Blur and display colors |
+
+## Next steps
+
+1. Add real solar position, weather, material properties, shade, and gradual heating.
+2. Validate against independent thermal observations.
+3. Validate or train YOLO26 for thermal images, then consider Kalman tracking.
+
+## Quick fixes
+
+- **Keyboard unresponsive:** Click the main 3D view.
+- **Sensor overlay blocks the scene:** Close the overlay with **X**.
+- **Need thermal view:** Press **T**. **Plain Rendering** only changes drawing style.
 
 
-## Deer Detection Design
+## Integrated patrol, forest, and RGB detection
 
-The current `visual_shape` backend uses the simulator camera's rendered object
-recognition to count only deer whose silhouettes are inside the frame and not
-occluded. Detection is separated from flight control in
-`world/controllers/drone_tracker/detection.py`
+`world/controllers/drone_startup/drone_startup.py` retains the one-line
+`DRONE_MODE` selector: `"patrol"` follows the launch-pad waypoints;
+`"drone_tracker"` starts the manual survey near the herd.
+The manual survey starts in simulated thermal mode. Press **T** for RGB YOLO
+and press **T** again to return to thermal. `DETECTION_BACKEND` in
+`drone_tracker.py` selects `"yolo"` or `"visual_shape"` for RGB only.
+Thermal segmentation uses simulator labels to synthesize temperatures; RGB
+YOLO predictions use camera pixels, not those labels. Thermal candidates are
+not confirmed deer. Their confidence is a heat-contrast heuristic, not a YOLO
+confidence score. Recognition-only results have no confidence score.
 
-The deer controller uses separate `IdleState`, `GrazeState`, `AlertState`, and
-`WalkState` classes in `world/controllers/deer_ai/deer_states.py`. Each class
-owns its duration, transitions, and movement intent.
+Use pyenv Python 3.12.11 and install `requirements.txt` in `.venv`; point Webots
+at the absolute path of `.venv/bin/python`. YOLO weights are loaded from
+`yolo_exported_models_and_weights/best.pt` when RGB is first selected.
+
+The world includes `forest/catalina.forest` with 100,000 positions. Regenerate
+from the repository root with `python world/scripts/generate_island_forest.py`.
+These original positions include ocean areas. The forest can affect simulation
+performance. The thermal shrub model remains specific to the three survey
+shrubs; forest trees are not assigned individual material temperatures.

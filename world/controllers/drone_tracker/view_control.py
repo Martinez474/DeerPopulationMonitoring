@@ -1,12 +1,7 @@
-"""Switch the Webots 3D view between chase and onboard camera views."""
+"""Keep the Webots 3D viewpoint on the drone's camera."""
 
-from dataclasses import dataclass
 import math
 from typing import Any, Sequence
-
-
-CHASE_VIEW = "chase"
-DRONE_VIEW = "drone"
 
 
 def rotation_matrix_to_axis_angle(matrix: Sequence[float]) -> list[float]:
@@ -60,18 +55,8 @@ def rotation_matrix_to_axis_angle(matrix: Sequence[float]) -> list[float]:
     return [qx / sine, qy / sine, qz / sine, angle]
 
 
-@dataclass
-class ViewSnapshot:
-    position: list[float]
-    orientation: list[float]
-    field_of_view: float
-    follow: str
-    follow_type: str
-    follow_smoothness: float
-
-
 class DroneViewController:
-    """Own the chase/onboard view toggle for a supervisor controller."""
+    """Show only the onboard thermal or visible camera view."""
 
     def __init__(self, supervisor: Any, camera: Any, viewpoint_def: str):
         # connect the camera and world viewpoint
@@ -83,58 +68,26 @@ class DroneViewController:
         if self.viewpoint_node is None:
             raise RuntimeError(f"Could not find Viewpoint DEF {viewpoint_def!r}")
 
-        # keep access to the viewpoint fields
+        # Remove Webots' follow smoothing and take direct control of the view.
         self.position = self.viewpoint_node.getField("position")
         self.orientation = self.viewpoint_node.getField("orientation")
-        self.field_of_view = self.viewpoint_node.getField("fieldOfView")
-        self.follow = self.viewpoint_node.getField("follow")
-        self.follow_type = self.viewpoint_node.getField("followType")
-        self.follow_smoothness = self.viewpoint_node.getField("followSmoothness")
-        # remember the original chase view
-        self.mode = CHASE_VIEW
-        self.chase_snapshot = self._snapshot()
+        self.viewpoint_node.getField("follow").setSFString("")
+        self.viewpoint_node.getField("followType").setSFString("None")
+        self.viewpoint_node.getField("followSmoothness").setSFFloat(0.0)
+        self.viewpoint_node.getField("near").setSFFloat(0.05)
+        self.viewpoint_node.getField("fieldOfView").setSFFloat(camera.getFov())
+        self.thermal_mode = True
+        self.update()
 
-    @property
-    def label(self) -> str:
-        return "DRONE VIEW" if self.mode == DRONE_VIEW else "CHASE VIEW"
-
-    def _snapshot(self) -> ViewSnapshot:
-        return ViewSnapshot(
-            position=list(self.position.getSFVec3f()),
-            orientation=list(self.orientation.getSFRotation()),
-            field_of_view=self.field_of_view.getSFFloat(),
-            follow=self.follow.getSFString(),
-            follow_type=self.follow_type.getSFString(),
-            follow_smoothness=self.follow_smoothness.getSFFloat(),
-        )
-
-    def toggle(self) -> str:
-        if self.mode == CHASE_VIEW:
-            # move the viewpoint onto the drone camera
-            self.chase_snapshot = self._snapshot()
-            self.mode = DRONE_VIEW
-            self.follow.setSFString("")
-            self.follow_type.setSFString("None")
-            self.field_of_view.setSFFloat(self.camera.getFov())
-            self.update()
-        else:
-            # restore the saved chase view
-            self.mode = CHASE_VIEW
-            snapshot = self.chase_snapshot
-            self.position.setSFVec3f(snapshot.position)
-            self.orientation.setSFRotation(snapshot.orientation)
-            self.field_of_view.setSFFloat(snapshot.field_of_view)
-            self.follow.setSFString(snapshot.follow)
-            self.follow_type.setSFString(snapshot.follow_type)
-            self.follow_smoothness.setSFFloat(snapshot.follow_smoothness)
-        return self.mode
-
-    def update(self) -> None:
-        if self.mode != DRONE_VIEW:
-            return
-
-        # match the viewpoint to the camera pose
-        self.position.setSFVec3f(list(self.camera_node.getPosition()))
-        self.orientation.setSFRotation(
-            rotation_matrix_to_axis_angle(self.camera_node.getOrientation())
-        )
+    def update(self, position_correction=(0.0, 0.0, 0.0)) -> None:
+        # Webots cameras look along local +X. The thermal screen sits behind
+        # the sensing camera and between it and the 3D viewpoint.
+        camera_position = self.camera_node.getPosition()
+        camera_orientation = self.camera_node.getOrientation()
+        optical_offset = -1.1 if self.thermal_mode else 0.8
+        self.position.setSFVec3f([
+            camera_position[0] + position_correction[0] + camera_orientation[0] * optical_offset,
+            camera_position[1] + position_correction[1] + camera_orientation[3] * optical_offset,
+            camera_position[2] + position_correction[2] + camera_orientation[6] * optical_offset,
+        ])
+        self.orientation.setSFRotation(rotation_matrix_to_axis_angle(camera_orientation))

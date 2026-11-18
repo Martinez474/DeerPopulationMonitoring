@@ -5,17 +5,29 @@ import math
 
 from controller import Keyboard, Supervisor
 
-from detection import VisualShapeDeerDetector
-from view_control import DRONE_VIEW, DroneViewController
+from detection import THERMAL_MODE, VisualShapeDeerDetector
+from thermal_detection import (
+    DEER_DEFS,
+    background_temperature_c,
+    count_ground_truth_matches,
+    hour_of_day,
+    sunlight_direction,
+    sunlight_fraction,
+)
+from thermal_image_detection import ThermalImageDeerDetector
+from thermal_scene import render_temperature_frame
+from thermal_view import blur_temperatures, colorize_temperatures, display_temperature_range
+from view_control import DroneViewController
 
 
-DETECTION_BACKEND = "yolo"  # "yolo" or "visual_shape"
+DETECTION_BACKEND = "yolo"  # RGB backend: "yolo" or "visual_shape"
 YOLO_INTERVAL_SECONDS = 0.2
 
 HUD_FONT = "Arial Black"
 HUD_TEXT = 0xFFFFFF
 HUD_ACCENT = 0x9EEBFF
 HUD_HIGHLIGHT = 0xFFF176
+HUD_HEAT = 0xFF6B38
 
 # change this value to resize all hud text
 HUD_TEXT_SCALE = 1.5
@@ -46,14 +58,12 @@ class WildlifeSurveyDrone(Supervisor):
     climb_speed = 3.0
     turn_speed = 1.1
 
-    # altitude and camera limits
+    # altitude limits
     min_altitude = 204.0
     max_altitude = 500.0
-    min_camera_pitch = -0.5
-    max_camera_pitch = 1.7
 
     # slower camera updates reduce rendering work
-    camera_update_steps = 8
+    camera_update_steps = 32
     hud_update_interval = 1.0
     action_cooldown = 0.25
 
@@ -61,16 +71,11 @@ class WildlifeSurveyDrone(Supervisor):
         super().__init__()
 
         if survey_start:
-            # Reuse the same drone, placing it at the original survey start.
+            # Reuse the same drone, placing it at the survey start.
             drone = self.getSelf()
             drone.getField("translation").setSFVec3f([23868, 17007, 220])
             drone.getField("rotation").setSFRotation([0, 0, 1, 0])
             drone.resetPhysics()
-            viewpoint = self.getFromDef("SURVEY_VIEWPOINT")
-            viewpoint.getField("position").setSFVec3f([23863.5, 16978.4, 222.8])
-            viewpoint.getField("orientation").setSFRotation([-0.317, 0.088, 0.944, 3.604])
-            viewpoint.getField("follow").setSFString(drone.getField("name").getSFString())
-            viewpoint.getField("followSmoothness").setSFFloat(0.2)
 
         # measure one simulation step
         self.time_step = int(self.getBasicTimeStep())
@@ -95,6 +100,10 @@ class WildlifeSurveyDrone(Supervisor):
         self.next_action_time = 0.0
         self.next_hud_update = 0.0
         self.last_deer_count = None
+        self.last_hud_mode = None
+        self.thermal_time_offset = 0.0
+        self.thermal_display_range = None
+        self._setup_sun()
 
         self._clear_old_hud_labels()
         self.print_controls()
@@ -120,28 +129,48 @@ class WildlifeSurveyDrone(Supervisor):
         self.camera = self.getDevice("camera")
         camera_period = self.time_step * self.camera_update_steps
         self.camera.enable(camera_period)
-        if DETECTION_BACKEND == "yolo":
-            from yolo_detection import YoloDeerDetector
-            self.detector = YoloDeerDetector()
-        elif DETECTION_BACKEND == "visual_shape":
-            self.camera.recognitionEnable(camera_period)
-            self.detector = VisualShapeDeerDetector()
-        else:
-            raise ValueError(f"Unknown detection backend: {DETECTION_BACKEND}")
+        self.camera.recognitionEnable(camera_period)
+        self.camera.enableRecognitionSegmentation()
+        self.range_finder = self.getDevice("thermal depth")
+        self.range_finder.enable(camera_period)
+
+        # Thermal uses temperature pixels; RGB uses the configured detector.
+        # Load YOLO lazily when RGB is first selected.
+        self.detectors = {
+            "visual_shape": VisualShapeDeerDetector(),
+            THERMAL_MODE: ThermalImageDeerDetector(),
+        }
+        self.detector = self.detectors[THERMAL_MODE]
         self.detections = []
         self.detection_interval = camera_period / 1000.0
-        if DETECTION_BACKEND == "yolo":
-            self.detection_interval = max(self.detection_interval, YOLO_INTERVAL_SECONDS)
         self.next_detection_time = camera_period / 1000.0
+        self.thermal_frame_number = 0
+        self.shrubs = [
+            node for number in range(1, 4)
+            if (node := self.getFromDef(f"THERMAL_SHRUB_{number}")) is not None
+        ]
+        self.ground_truth_deer_nodes = [
+            node for name in DEER_DEFS if (node := self.getFromDef(name)) is not None
+        ]
 
-        # manage chase and onboard views
+        # The 3D viewpoint always follows the onboard camera.
         self.view = DroneViewController(self, self.camera, "SURVEY_VIEWPOINT")
 
-        # point the camera toward the terrain
-        self.camera_pitch = 1.15
+        # Display pixels texture a panel behind the sensing camera. The 3D
+        # viewpoint looks at that panel whenever thermal mode is selected.
+        self.thermal_display = self.getDevice("thermal display")
+        display_node = self.getFromDevice(self.thermal_display._tag)
+        if display_node is None:
+            raise RuntimeError("Could not access the thermal display node")
+        self.thermal_screen_position = display_node.getField("translation")
+        self.thermal_screen_visible = False
+        self.next_thermal_frame_time = 0.0
+        self.thermal_frame_interval = self.detection_interval
+        self._sync_thermal_screen()
+
+        # Keep the survey camera aimed at the terrain.
         self.getDevice("camera roll").setPosition(0.0)
-        self.camera_pitch_motor = self.getDevice("camera pitch")
-        self.camera_pitch_motor.setPosition(self.camera_pitch)
+        self.getDevice("camera pitch").setPosition(1.15)
 
     def _start_propellers(self) -> None:
         """Spin the propellers so the drone looks active."""
@@ -158,30 +187,59 @@ class WildlifeSurveyDrone(Supervisor):
             motor.setPosition(float("inf"))
             motor.setVelocity(speed)
 
+    def _setup_sun(self) -> None:
+        """Connect the visible sun to the thermal survey clock."""
+
+        sun = self.getFromDef("SURVEY_SUN")
+        if sun is None:
+            raise RuntimeError("Could not find the survey sun")
+        self.sun_direction = sun.getField("direction")
+        self.sun_intensity = sun.getField("intensity")
+        self.sun_color = sun.getField("color")
+        self.sun_on = sun.getField("on")
+        self.next_sun_update = 0.0
+        self.update_sun(self.getTime())
+
+    def update_sun(self, now: float) -> None:
+        """Move and brighten the visible sun as solar heating changes."""
+
+        if now < self.next_sun_update:
+            return
+        hour = hour_of_day(now, self.thermal_time_offset)
+        strength = sunlight_fraction(hour)
+        self.sun_direction.setSFVec3f(sunlight_direction(hour))
+        self.sun_intensity.setSFFloat(1.5 * strength)
+        self.sun_color.setSFColor([1.0, 0.75 + 0.25 * strength,
+                                   0.55 + 0.45 * strength])
+        self.sun_on.setSFBool(strength > 0.01)
+        self.next_sun_update = now + 1.0
+
     def _clear_old_hud_labels(self) -> None:
         """Remove labels left behind if this controller is restarted."""
 
-        for label_id in range(12):
+        for label_id in range(32):
             self.setLabel(label_id, "", 0.0, 0.0, 0.01, HUD_TEXT)
 
     @staticmethod
     def print_controls() -> None:
         """Show the keyboard controls in the Webots console."""
 
-        print("\nWildlife survey drone ready. Click the 3D view, then use:")
+        print("\nWildlife survey drone ready in thermal view.")
+        print("Close any yellow depth or magenta RGB overlay with its X, then click the 3D view.")
+        print("Use these keys to control the drone:")
         print("  Up / Down                 fly forward / backward")
         print("  Left / Right              turn left / right")
         print("  Shift + Left / Right      strafe left / right")
         print("  Shift + Up / Down         raise / lower the drone")
-        print("  I / K                     tilt the camera")
-        print("  V                         switch camera view\n")
+        print("  T                         switch thermal / RGB view")
+        print("  O                         advance survey clock by six hours")
+        print("  No activation key is needed: thermal is the starting view.\n")
 
     def read_controls(self, now: float) -> FlightControls:
         """Read every queued key and return the requested movement."""
 
         # collect movement from every key in this step
         controls = FlightControls()
-        camera_change = 0.0
 
         key = self.keyboard.getKey()
         while key > 0:
@@ -201,34 +259,92 @@ class WildlifeSurveyDrone(Supervisor):
                 controls.climb = 1.0
             elif key == (Keyboard.SHIFT | Keyboard.DOWN):
                 controls.climb = -1.0
-            elif key in (ord("I"), ord("i")):
-                camera_change -= 0.04
-            elif key in (ord("K"), ord("k")):
-                camera_change += 0.04
-            elif key in (ord("V"), ord("v")):
-                self._toggle_view(now)
+            elif key in (ord("T"), ord("t")):
+                self._toggle_detector(now)
+            elif key in (ord("O"), ord("o")):
+                self._advance_clock(now)
 
             key = self.keyboard.getKey()
 
-        # adjust the camera once after reading the keys
-        if camera_change:
-            self.camera_pitch = clamp(
-                self.camera_pitch + camera_change,
-                self.min_camera_pitch,
-                self.max_camera_pitch,
-            )
-            self.camera_pitch_motor.setPosition(self.camera_pitch)
-
         return controls
 
-    def _toggle_view(self, now: float) -> None:
-        # stop a held key from switching too quickly
+    def _toggle_detector(self, now: float) -> None:
         if now < self.next_action_time:
             return
         self.next_action_time = now + self.action_cooldown
-        self.view.toggle()
+        next_mode = DETECTION_BACKEND if self.detector.mode == THERMAL_MODE else THERMAL_MODE
+        if next_mode not in self.detectors:
+            if next_mode != "yolo":
+                raise ValueError(f"Unknown RGB detection backend: {next_mode}")
+            from yolo_detection import YoloDeerDetector
+            self.detectors[next_mode] = YoloDeerDetector()
+        self.detector = self.detectors[next_mode]
+        self.detection_interval = self.time_step * self.camera_update_steps / 1000.0
+        if next_mode == "yolo":
+            self.detection_interval = max(self.detection_interval, YOLO_INTERVAL_SECONDS)
+        self.view.thermal_mode = next_mode == THERMAL_MODE
+        self._sync_thermal_screen()
+        self.view.update()
+        self.next_detection_time = 0.0
+        self.next_thermal_frame_time = 0.0
         self.next_hud_update = 0.0
-        print(f"[view] {self.view.label.lower()}")
+        self.detections = []
+        print(f"[detection] {next_mode}")
+
+    def _advance_clock(self, now: float) -> None:
+        if now < self.next_action_time:
+            return
+        self.next_action_time = now + self.action_cooldown
+        self.thermal_time_offset += 6.0
+        self.next_detection_time = 0.0
+        self.next_thermal_frame_time = 0.0
+        self.next_hud_update = 0.0
+        self.next_sun_update = 0.0
+
+    def _sync_thermal_screen(self) -> None:
+        visible = self.detector.mode == THERMAL_MODE
+        if visible == self.thermal_screen_visible:
+            return
+        self.thermal_screen_position.setSFVec3f(
+            [-0.5, 0.0, 0.0] if visible else [0.0, 0.0, 1000.0]
+        )
+        self.thermal_screen_visible = visible
+
+    def update_thermal_view(self, now: float) -> None:
+        if not self.thermal_screen_visible or now < self.next_thermal_frame_time:
+            return
+        depths = self.range_finder.getRangeImage()
+        if not depths:
+            return
+        segmentation = self.camera.getRecognitionSegmentationImage()
+        display = self.thermal_display
+        width, height = self.range_finder.getWidth(), self.range_finder.getHeight()
+        hour = hour_of_day(now, self.thermal_time_offset)
+        frame = render_temperature_frame(
+            depths, segmentation,
+            self.view.camera_node.getPosition(),
+            self.view.camera_node.getOrientation(),
+            [tuple(node.getPosition()[axis] + (1.8 if axis == 2 else 0.0)
+                   for axis in range(3)) for node in self.shrubs],
+            hour, width, height, self.camera.getFov(),
+            self.camera.getWidth(), self.camera.getHeight(),
+            self.thermal_frame_number,
+        )
+        temperatures = blur_temperatures(frame.temperatures, width, height)
+        self.thermal_display_range = display_temperature_range(frame.background_c)
+        pixels = colorize_temperatures(temperatures, width, height,
+                                       *self.thermal_display_range)
+        image_ref = display.imageNew(
+            pixels, display.RGB, width, height
+        )
+        display.imagePaste(image_ref, 0, 0, False)
+        display.imageDelete(image_ref)
+        self.detections = self.detector.detect(
+            temperatures, depths, width, height, self.camera.getFov(),
+            self.camera.getWidth(), self.camera.getHeight(), frame.background_c,
+        )
+        self.thermal_frame_number += 1
+        self.next_thermal_frame_time = now + self.thermal_frame_interval
 
     def move_drone(self, controls: FlightControls) -> None:
         """Apply the requested movement in the drone's local direction."""
@@ -274,12 +390,13 @@ class WildlifeSurveyDrone(Supervisor):
         self.last_led_state = led_state
 
     def update_detection(self, now: float) -> None:
-        """Refresh the visible-deer list when a new camera frame is ready."""
+        """Refresh detections at the camera sampling rate."""
 
         # only scan after a new camera frame
         if now < self.next_detection_time:
             return
-        self.detections = self.detector.detect(self.camera)
+        if self.detector.mode != THERMAL_MODE:
+            self.detections = self.detector.detect(self.camera)
         self.next_detection_time = now + self.detection_interval
 
     def set_hud_text(
@@ -302,13 +419,15 @@ class WildlifeSurveyDrone(Supervisor):
 
         deer_count = len(self.detections)
         count_changed = deer_count != self.last_deer_count
+        mode_changed = self.detector.mode != self.last_hud_mode
 
         # refresh early when the deer count changes
-        if not count_changed and now < self.next_hud_update:
+        if not count_changed and not mode_changed and now < self.next_hud_update:
             return
 
-        drone_view = self.view.mode == DRONE_VIEW
-        view_text = "Drone camera - LIVE" if drone_view else "Chase view"
+        thermal = self.detector.mode == THERMAL_MODE
+        view_text = "Drone thermal view" if thermal else "Drone visual view"
+        hour = hour_of_day(now, self.thermal_time_offset)
 
         # keep related labels spaced with the text scale
         title_y = 0.025
@@ -318,9 +437,14 @@ class WildlifeSurveyDrone(Supervisor):
 
         # draw view status and deer count
         self.set_hud_text(0, view_text, 0.025, title_y, 0.045, HUD_ACCENT)
+        scale_text = ""
+        if thermal and self.thermal_display_range is not None:
+            low_c, high_c = self.thermal_display_range
+            scale_text = f"SCALE {low_c:.0f}-{high_c:.0f} C"
+        self.set_hud_text(6, scale_text, 0.75, title_y, 0.024, HUD_TEXT)
         self.set_hud_text(
             1,
-            f"Deer visible ({self.detector.mode}): {deer_count}",
+            f"{'Thermal candidates' if thermal else 'Deer visible'} ({self.detector.mode}): {deer_count}",
             0.025,
             count_y,
             0.078,
@@ -329,7 +453,7 @@ class WildlifeSurveyDrone(Supervisor):
         # draw controls at the bottom of the screen
         self.set_hud_text(
             3,
-            "Move: arrows    Strafe / altitude: Shift + arrows    Camera: I / K",
+            "Move: arrows    Strafe / altitude: Shift + arrows",
             0.025,
             controls_first_y,
             0.026,
@@ -337,27 +461,57 @@ class WildlifeSurveyDrone(Supervisor):
         )
         self.set_hud_text(
             4,
-            "Switch view: V",
+            "Thermal starts automatically    T: thermal / RGB    O: time +6h",
             0.025,
             controls_second_y,
             0.026,
             HUD_TEXT,
         )
-        # show the reticle only in drone view
+        # Show the reticle in the onboard view.
         self.set_hud_text(
             5,
-            "+" if drone_view else "",
+            "+",
             0.487,
             0.455,
             0.072,
             HUD_HIGHLIGHT,
         )
-
-        print(
-            f"[vision] deer visible: {deer_count} | "
-            f"altitude: {self.position[2]:.1f} m"
+        self.set_hud_text(
+            2,
+            (
+                f"SIMULATED THERMAL  {int(hour):02d}:{int((hour % 1) * 60):02d}  "
+                f"background {background_temperature_c(hour):.1f} C"
+                if thermal else "VISUAL CAMERA"
+            ),
+            0.025,
+            count_y + (0.078 * HUD_TEXT_SCALE) + 0.025,
+            0.031,
+            HUD_HEAT if thermal else HUD_ACCENT,
         )
+        for index in range(20):
+            marker = ""
+            x = y = 0.0
+            if thermal and index < len(self.detections):
+                detection = self.detections[index]
+                marker = "+"
+                x = clamp(detection.image_x / self.camera.getWidth(), 0.0, 0.96)
+                y = clamp(detection.image_y / self.camera.getHeight(), 0.0, 0.96)
+            self.set_hud_text(10 + index, marker, x, y, 0.045, HUD_HEAT)
+
+        if thermal:
+            matches = count_ground_truth_matches(
+                self.detections,
+                [node.getPosition() for node in self.ground_truth_deer_nodes],
+                self.view.camera_node.getPosition(),
+                self.view.camera_node.getOrientation(),
+                self.camera.getWidth(), self.camera.getHeight(), self.camera.getFov(),
+            )
+            print(f"[thermal] candidates: {deer_count}, near known deer: {matches} | "
+                  f"altitude: {self.position[2]:.1f} m")
+        else:
+            print(f"[visual] deer visible: {deer_count} | altitude: {self.position[2]:.1f} m")
         self.last_deer_count = deer_count
+        self.last_hud_mode = self.detector.mode
         self.next_hud_update = now + self.hud_update_interval
 
     def run(self) -> None:
@@ -367,10 +521,20 @@ class WildlifeSurveyDrone(Supervisor):
         while self.step(self.time_step) != -1:
             now = self.getTime()
             controls = self.read_controls(now)
+            self.update_sun(now)
+            camera_before = self.view.camera_node.getPosition()
+            drone_before = tuple(self.position)
             self.move_drone(controls)
             self.update_leds(now)
-            self.view.update()
+            camera_after = self.view.camera_node.getPosition()
+            correction = tuple(
+                self.position[axis] - drone_before[axis]
+                - (camera_after[axis] - camera_before[axis])
+                for axis in range(3)
+            )
+            self.view.update(correction)
             self.update_detection(now)
+            self.update_thermal_view(now)
             self.update_hud(now)
 
 
