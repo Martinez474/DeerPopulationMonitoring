@@ -8,6 +8,8 @@ EXTERNPROTO "../protos/Deer.proto"
 EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/robots/dji/mavic/protos/Mavic2Pro.proto"
 EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/factory/manhole/protos/SquareManhole.proto"
 
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/trees/protos/Forest.proto"
+
 WorldInfo {
   basicTimeStep 8
   defaultDamping Damping {
@@ -132,4 +134,13 @@ Mavic2Pro {
 }
 DEF LaunchPad SquareManhole {
   translation 34988.9 15793.9 18
+}
+
+Forest {
+  # Existing island-wide positions sampled at terrain height.
+  treesFiles [
+    "forest/catalina.forest"
+  ]
+  randomSeed 42
+  groundTexture []
 }
