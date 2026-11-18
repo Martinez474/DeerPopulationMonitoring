@@ -1,9 +1,4 @@
-"""Deer detection backends for the survey drone.
-
-The visual backend uses Webots' camera-recognition output.  Keeping detection
-behind this small interface lets a thermal backend replace it later without
-changing flight control or the HUD.
-"""
+"""Deer detection results and the Webots visible-light backend."""
 
 from dataclasses import asdict, dataclass
 import re
@@ -11,6 +6,7 @@ from typing import Any
 
 
 VISUAL_SHAPE_MODE = "visual_shape"
+THERMAL_MODE = "simulated_thermal"
 
 
 def is_deer_model(model: str) -> bool:
@@ -33,6 +29,9 @@ class DeerDetection:
     camera_x: float
     camera_y: float
     camera_z: float
+    confidence: float = 1.0
+    thermal_contrast_c: float | None = None
+    canopy_cover: float = 0.0
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

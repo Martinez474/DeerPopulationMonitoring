@@ -16,78 +16,157 @@ WorldInfo {
   }
 }
 DEF SURVEY_VIEWPOINT Viewpoint {
-  orientation 0 0 1 3.6915926535897934
-  position 23881.168150136094 17010.17603532597 204.2910448450615
-  follow "Catalina deer"
-  followSmoothness 0.4
+  orientation 0 0 1 0
+  position 23868 17007 220
+  near 0.05
 }
 TexturedBackground {
 }
 TexturedBackgroundLight {
+  luminosity 0.15
+  castShadows FALSE
+}
+DEF SURVEY_SUN DirectionalLight {
+  direction -0.996 0 -0.087
+  color 1 0.75 0.55
+  intensity 0
+  on FALSE
+  castShadows FALSE
 }
 RectangleArena {
 }
 CatalinaTerrain {
 }
-Deer {
+DEF THERMAL_DEER_1 Deer {
   translation 23876 17007.2 203.127
   rotation 0 0 1 0.55
   name "Catalina deer"
   customData "7"
 }
-Deer {
+DEF THERMAL_DEER_2 Deer {
   translation 23888 17016.2 203.126
   rotation 0 0 1 1.18
   name "Catalina deer 2"
   customData "18"
 }
-Deer {
+DEF THERMAL_DEER_3 Deer {
   translation 23861 17019.2 203.306
   rotation 0 0 1 -0.42
   name "Catalina deer 3"
   customData "29"
 }
-Deer {
+DEF THERMAL_DEER_4 Deer {
   translation 23898 16997.2 203.31
   rotation 0 0 1 2.35
   name "Catalina deer 4"
   customData "40"
 }
-Deer {
+DEF THERMAL_DEER_5 Deer {
   translation 23851 16999.2 203.896
   rotation 0 0 1 -1.64
   name "Catalina deer 5"
   customData "51"
 }
-Deer {
+DEF THERMAL_DEER_6 Deer {
   translation 23911 17022.2 203.226
   rotation 0 0 1 0.12
   name "Catalina deer 6"
   customData "62"
 }
-Deer {
+DEF THERMAL_DEER_7 Deer {
   translation 23838 17025.2 203.501
   rotation 0 0 1 2.92
   name "Catalina deer 7"
   customData "73"
 }
-Deer {
+DEF THERMAL_DEER_8 Deer {
   translation 23918 16985.2 203.487
   rotation 0 0 1 -2.48
   name "Catalina deer 8"
   customData "84"
 }
-Deer {
+DEF THERMAL_DEER_9 Deer {
   translation 23831 16987.2 204.927
   rotation 0 0 1 1.82
   name "Catalina deer 9"
   customData "95"
 }
-Deer {
+DEF THERMAL_DEER_10 Deer {
   translation 23880 17042.2 203.329
   rotation 0 0 1 -0.95
   name "Catalina deer 10"
   customData "106"
+}
+# Canopies near three deer make cover observable in visual and thermal modes.
+# The thermal controller uses their bounding-sphere radius and foliage density.
+DEF THERMAL_SHRUB_1 Solid {
+  translation 23888 17016.2 203.126
+  name "sparse survey shrub"
+  children [
+    Transform {
+      translation 0 0 1.8
+      scale 2.6 2.6 2.2
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.23 0.34 0.12
+            roughness 1
+          }
+          geometry Sphere { radius 1 }
+        }
+      ]
+    }
+  ]
+  boundingObject Pose {
+    translation 0 0 1.8
+    children [ Sphere { radius 2.6 } ]
+  }
+}
+DEF THERMAL_SHRUB_2 Solid {
+  translation 23898 16997.2 203.31
+  name "dense survey shrub"
+  children [
+    Transform {
+      translation 0 0 1.8
+      scale 2.6 2.6 2.2
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.16 0.27 0.10
+            roughness 1
+          }
+          geometry Sphere { radius 1 }
+        }
+      ]
+    }
+  ]
+  boundingObject Pose {
+    translation 0 0 1.8
+    children [ Sphere { radius 2.6 } ]
+  }
+}
+DEF THERMAL_SHRUB_3 Solid {
+  translation 23838 17025.2 203.501
+  name "medium survey shrub"
+  children [
+    Transform {
+      translation 0 0 1.8
+      scale 2.6 2.6 2.2
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.21 0.31 0.13
+            roughness 1
+          }
+          geometry Sphere { radius 1 }
+        }
+      ]
+    }
+  ]
+  boundingObject Pose {
+    translation 0 0 1.8
+    children [ Sphere { radius 2.6 } ]
+  }
 }
 DEF Waypoints(Drone) Group {
   children [
@@ -115,18 +194,49 @@ Mavic2Pro {
     Camera {
       name "camera"
       fieldOfView 1.0472
-      width 960
-      height 540
+      width 640
+      height 360
       near 0.2
       far 500
-      antiAliasing TRUE
+      antiAliasing FALSE
       recognition Recognition {
         maxRange 250
         maxObjects -1
         occlusion 1
+        segmentation TRUE
         frameColor 0.2 1 0.2
         frameThickness 5
       }
+    }
+    RangeFinder {
+      name "thermal depth"
+      fieldOfView 1.0472
+      width 256
+      height 144
+      near 0.2
+      minRange 0.2
+      maxRange 500
+    }
+    Display {
+      translation 0 0 1000
+      name "thermal display"
+      width 256
+      height 144
+      children [
+        # In thermal mode the panel is 0.5 m behind the sensing camera and
+        # 0.6 m in front of the viewpoint. Webots cameras look along +X.
+        Shape {
+          appearance Appearance {
+            texture ImageTexture {
+              url []
+              filtering 0
+            }
+          }
+          geometry Box {
+            size 0.002 0.7 0.394
+          }
+        }
+      ]
     }
   ]
 }

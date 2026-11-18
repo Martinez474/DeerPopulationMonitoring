@@ -2,9 +2,11 @@
 
 from osgeo import gdal
 import math
+from pathlib import Path
 
-INPUT_FILE = "catalina-512.tif"
-OUTPUT_FILE = "CatalinaTerrain.proto"
+PROJECT_ROOT = Path(__file__).resolve().parent
+INPUT_FILE = PROJECT_ROOT / "catalina-512.tif"
+OUTPUT_FILE = PROJECT_ROOT / "world" / "protos" / "CatalinaTerrain.proto"
 
 # Change this if you want the island smaller in Webots.
 HORIZONTAL_SCALE = 1.0
@@ -13,7 +15,7 @@ HORIZONTAL_SCALE = 1.0
 # Increase it slightly if the terrain looks too flat.
 VERTICAL_SCALE = 1.0
 
-dataset = gdal.Open(INPUT_FILE)
+dataset = gdal.Open(str(INPUT_FILE))
 
 if dataset is None:
     raise RuntimeError(f"Could not open {INPUT_FILE}")
